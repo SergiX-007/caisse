@@ -1,0 +1,1830 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Caisse - Transferts et finances</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+/* ---------- Jetons ---------- */
+:root {
+  --papier: #E7E9E2;
+  --carte: #F4F5F0;
+  --encre: #1A1D1A;
+  --gris: #6B7168;
+  --gris-clair: #9AA095;
+  --trait: #C7CABF;
+  --piste: #DBDDD3;
+  --credit: #1F5C4A;
+  --debit: #A33B2A;
+  --tampon: #2B4C7E;
+  --ocre: #8A6D1B;
+  --prune: #5E4A7E;
+  --sarcelle: #3E7A8A;
+  --alerte: #8A2B1B;
+  --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --texte: "Archivo", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --r: 3px;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: var(--papier); color: var(--encre); font-family: var(--texte);
+  font-size: 15px; line-height: 1.5; -webkit-font-smoothing: antialiased;
+  padding: 20px 16px 60px;
+}
+.enveloppe { max-width: 1180px; margin: 0 auto; }
+
+/* ---------- En-tete ---------- */
+.entete {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: 16px; flex-wrap: wrap; border-bottom: 2px solid var(--encre);
+  padding-bottom: 12px; margin-bottom: 14px;
+}
+.entete h1 { font-size: 21px; font-weight: 700; letter-spacing: -0.02em; text-transform: uppercase; }
+.entete .route {
+  font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em;
+  text-transform: uppercase; color: var(--gris);
+}
+
+/* ---------- Etat de synchronisation ---------- */
+.etat-sync {
+  display: inline-flex; align-items: center; gap: 7px;
+  font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.12em;
+  text-transform: uppercase; color: var(--gris); white-space: nowrap;
+}
+.etat-sync::before {
+  content: ""; width: 7px; height: 7px; border-radius: 50%;
+  background: var(--gris-clair); flex: none;
+}
+.etat-sync[data-etat="pret"]::before   { background: var(--credit); }
+.etat-sync[data-etat="cours"]::before  { background: var(--ocre); animation: pulse 1s ease-in-out infinite; }
+.etat-sync[data-etat="erreur"] { color: var(--alerte); }
+.etat-sync[data-etat="erreur"]::before { background: var(--alerte); }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
+@media (prefers-reduced-motion: reduce) { .etat-sync::before { animation: none !important; } }
+.barre-outils { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 18px; }
+
+/* ---------- Navigation vues ---------- */
+.nav-vues {
+  display: flex; gap: 0; flex-wrap: wrap;
+  border-bottom: 1px solid var(--trait); margin-bottom: 24px;
+}
+.nav-vues button {
+  background: none; border: none; border-bottom: 2px solid transparent;
+  padding: 10px 0; margin-right: 28px; cursor: pointer;
+  font-family: var(--mono); font-size: 11.5px; letter-spacing: 0.14em;
+  text-transform: uppercase; color: var(--gris);
+}
+.nav-vues button[aria-current="true"] {
+  color: var(--encre); border-bottom-color: var(--encre); font-weight: 600;
+}
+.vue[hidden] { display: none; }
+
+.avert {
+  background: #F3EAD8; border-left: 3px solid var(--ocre); padding: 10px 14px;
+  font-size: 13.5px; color: #6B551A; margin-bottom: 20px; border-radius: 0 var(--r) var(--r) 0;
+}
+
+/* ---------- Couverture ---------- */
+.couverture {
+  background: var(--carte); border: 1px solid var(--trait); border-radius: var(--r);
+  padding: 20px; margin-bottom: 26px;
+}
+.couverture-titre {
+  font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.16em;
+  text-transform: uppercase; color: var(--gris); margin-bottom: 14px;
+}
+.jauge {
+  position: relative; height: 42px; background: var(--piste);
+  border: 1px solid var(--trait); border-radius: 2px; overflow: hidden; display: flex;
+}
+.jauge-du {
+  background-image: repeating-linear-gradient(-45deg, var(--debit) 0 5px, #B8503E 5px 10px);
+  transition: width .35s cubic-bezier(.2,.7,.3,1);
+}
+.jauge-mien { background: var(--credit); transition: width .35s cubic-bezier(.2,.7,.3,1); }
+.jauge-vide { flex: 1; }
+.jauge-legende {
+  position: absolute; inset: 0; display: flex; align-items: center; padding: 0 12px;
+  font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
+  color: #F4F5F0; pointer-events: none; justify-content: space-between;
+}
+.jauge-legende span { text-shadow: 0 1px 2px rgba(0,0,0,.4); }
+.jauge.decouvert { border-color: var(--alerte); }
+
+.chiffres {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 1px; background: var(--trait); border: 1px solid var(--trait); margin-top: 18px;
+}
+.chiffre { background: var(--carte); padding: 12px 14px; }
+.chiffre dt {
+  font-family: var(--mono); font-size: 10px; letter-spacing: 0.13em;
+  text-transform: uppercase; color: var(--gris); margin-bottom: 4px;
+}
+.chiffre dd {
+  font-family: var(--mono); font-size: 19px; font-weight: 600;
+  font-variant-numeric: tabular-nums; letter-spacing: -0.02em;
+}
+.chiffre dd.pos { color: var(--credit); }
+.chiffre dd.neg { color: var(--alerte); }
+.chiffre dd small { font-size: 11px; font-weight: 400; color: var(--gris); display: block; letter-spacing: 0; }
+
+.saisie-caisse {
+  display: flex; gap: 18px; flex-wrap: wrap; margin-top: 16px;
+  padding-top: 16px; border-top: 1px dashed var(--trait);
+}
+.saisie-caisse label {
+  display: flex; align-items: center; gap: 8px; font-family: var(--mono);
+  font-size: 10.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--gris);
+}
+.saisie-caisse input { width: 130px; }
+
+.bandeau-manque {
+  margin-top: 14px; padding: 10px 14px; background: #F6E6E2;
+  border-left: 3px solid var(--alerte); font-size: 14px; color: var(--alerte); font-weight: 500;
+}
+.bandeau-ok {
+  margin-top: 14px; padding: 10px 14px; background: #E2EDE6;
+  border-left: 3px solid var(--credit); font-size: 14px; color: var(--credit);
+}
+
+/* ---------- Grille ---------- */
+.grille { display: grid; grid-template-columns: 300px 1fr; gap: 22px; align-items: start; }
+@media (max-width: 880px) { .grille { grid-template-columns: 1fr; } }
+
+.bloc { background: var(--carte); border: 1px solid var(--trait); border-radius: var(--r); }
+.bloc + .bloc { margin-top: 22px; }
+.bloc-entete {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 13px 16px; border-bottom: 1px solid var(--trait); flex-wrap: wrap;
+}
+.bloc-entete h2 {
+  font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.16em;
+  text-transform: uppercase; color: var(--gris); font-weight: 500;
+}
+.bloc-corps { padding: 20px; }
+
+/* ---------- Clients ---------- */
+.liste-clients { list-style: none; }
+.liste-clients li + li { border-top: 1px solid var(--trait); }
+.client-btn {
+  width: 100%; display: flex; align-items: baseline; justify-content: space-between;
+  gap: 10px; padding: 12px 16px; background: none; border: none;
+  border-left: 3px solid transparent; text-align: left; cursor: pointer;
+  font-family: inherit; font-size: 15px; color: var(--encre);
+}
+.client-btn:hover { background: #EAEBE4; }
+.client-btn[aria-current="true"] { border-left-color: var(--tampon); background: #E6EAF0; font-weight: 600; }
+.client-btn .montant {
+  font-family: var(--mono); font-size: 13px; font-variant-numeric: tabular-nums;
+  color: var(--credit); white-space: nowrap;
+}
+.client-btn .montant.zero { color: var(--gris-clair); }
+.vide { padding: 22px 16px; font-size: 13.5px; color: var(--gris); }
+
+/* ---------- Detail ---------- */
+.detail-entete {
+  padding: 18px 20px; border-bottom: 1px solid var(--trait);
+  display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap;
+}
+.detail-entete h2 { font-size: 24px; font-weight: 700; letter-spacing: -0.02em; }
+.sous {
+  font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.13em;
+  text-transform: uppercase; color: var(--gris);
+}
+.solde-client { text-align: right; }
+.solde-client .valeur {
+  font-family: var(--mono); font-size: 26px; font-weight: 600;
+  font-variant-numeric: tabular-nums; letter-spacing: -0.03em; color: var(--credit); display: block;
+}
+.solde-client .valeur.zero { color: var(--gris-clair); }
+.solde-client .valeur.neg { color: var(--alerte); }
+
+.onglets { display: flex; border-bottom: 1px solid var(--trait); padding: 0 20px; }
+.onglet {
+  background: none; border: none; border-bottom: 2px solid transparent; padding: 11px 0;
+  margin-right: 24px; font-family: var(--mono); font-size: 11px; letter-spacing: 0.13em;
+  text-transform: uppercase; color: var(--gris); cursor: pointer;
+}
+.onglet[aria-selected="true"] { color: var(--encre); border-bottom-color: var(--encre); font-weight: 600; }
+.panneau { padding: 20px; }
+.panneau[hidden] { display: none; }
+
+/* ---------- Formulaires ---------- */
+.formulaire {
+  background: #EDEEE7; border: 1px solid var(--trait); border-radius: var(--r);
+  padding: 16px; margin-bottom: 20px;
+}
+.formulaire .titre-form {
+  font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.14em;
+  text-transform: uppercase; color: var(--gris); margin-bottom: 12px; display: block;
+}
+.champs { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
+.champ { display: flex; flex-direction: column; gap: 5px; }
+.champ.large { grid-column: 1 / -1; }
+.champ label {
+  font-family: var(--mono); font-size: 10px; letter-spacing: 0.11em;
+  text-transform: uppercase; color: var(--gris);
+}
+input, select, textarea {
+  font-family: var(--mono); font-size: 14px; font-variant-numeric: tabular-nums;
+  padding: 8px 10px; border: 1px solid var(--trait); border-radius: 2px;
+  background: #FBFBF8; color: var(--encre); width: 100%;
+}
+input[type="text"], textarea, select { font-family: var(--texte); }
+input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-visible {
+  outline: 2px solid var(--tampon); outline-offset: 1px;
+}
+.bouton {
+  font-family: var(--mono); font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase;
+  font-weight: 500; padding: 9px 16px; border: 1px solid var(--encre); border-radius: 2px;
+  background: var(--encre); color: var(--carte); cursor: pointer; white-space: nowrap;
+}
+.bouton:hover { background: #2C312C; }
+.bouton.secondaire { background: transparent; color: var(--encre); border-color: var(--trait); }
+.bouton.secondaire:hover { background: #E3E5DD; }
+.bouton.danger { background: transparent; color: var(--alerte); border-color: #D8B8B0; }
+.bouton.danger:hover { background: #F6E6E2; }
+.bouton.mini { padding: 5px 10px; font-size: 10px; letter-spacing: 0.1em; }
+.actions-form { margin-top: 14px; display: flex; gap: 10px; flex-wrap: wrap; }
+
+/* ---------- Tableau ---------- */
+.tableau-enveloppe { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; }
+thead th {
+  font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.13em; text-transform: uppercase;
+  color: var(--gris); font-weight: 500; text-align: left; padding: 8px 10px;
+  border-bottom: 1px solid var(--encre); white-space: nowrap;
+}
+tbody td { padding: 10px; border-bottom: 1px solid var(--trait); font-size: 13.5px; vertical-align: top; }
+tbody tr:hover { background: #EDEEE7; }
+.num { font-family: var(--mono); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+.etiquette {
+  font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.1em; text-transform: uppercase;
+  padding: 2px 7px; border-radius: 2px; white-space: nowrap;
+}
+.etiquette.depot, .etiquette.revenu { background: #DCE9E1; color: var(--credit); }
+.etiquette.envoi, .etiquette.depense { background: #F2DFDA; color: var(--debit); }
+.etiquette.remise { background: #E4E4DC; color: var(--gris); }
+.taux { font-family: var(--mono); font-size: 10.5px; color: var(--gris-clair); display: block; }
+.destinataire-num { font-family: var(--mono); font-size: 11.5px; color: var(--gris); display: block; }
+.note-ligne { font-size: 12.5px; color: var(--gris); display: block; margin-top: 2px; }
+.supprimer {
+  background: none; border: none; color: var(--gris-clair); cursor: pointer;
+  font-family: var(--mono); font-size: 15px; line-height: 1; padding: 2px 6px;
+}
+.supprimer:hover { color: var(--alerte); }
+
+/* ---------- Destinataires ---------- */
+.liste-contacts { list-style: none; }
+.liste-contacts li {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 11px 0; border-bottom: 1px solid var(--trait);
+}
+.liste-contacts .nom { font-weight: 500; }
+.liste-contacts .meta { font-family: var(--mono); font-size: 12px; color: var(--gris); }
+
+/* ---------- Graphiques ---------- */
+.filtre-periode {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+}
+.filtre-periode select { width: auto; min-width: 170px; }
+
+.barres-h { display: flex; flex-direction: column; gap: 11px; }
+.barre-h { display: grid; grid-template-columns: minmax(90px, 150px) 1fr auto; gap: 12px; align-items: center; }
+.barre-h .etiq { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.barre-h .piste { height: 15px; background: var(--piste); border-radius: 1px; overflow: hidden; }
+.barre-h .remplissage { height: 100%; border-radius: 1px; transition: width .3s ease; }
+.barre-h .val {
+  font-family: var(--mono); font-size: 12.5px; font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.barre-h .val em { font-style: normal; color: var(--gris-clair); font-size: 11px; }
+
+.colonnes { display: flex; gap: 8px; height: 230px; }
+.colonne { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.colonne .paire { flex: 1; display: flex; gap: 3px; align-items: flex-end; }
+.colonne .barre { flex: 1; min-height: 2px; border-radius: 1px 1px 0 0; transition: height .3s ease; }
+.colonne .barre.revenu { background: var(--credit); }
+.colonne .barre.depense { background: var(--debit); }
+.colonne .mois {
+  font-family: var(--mono); font-size: 9.5px; color: var(--gris); text-align: center;
+  padding-top: 7px; border-top: 1px solid var(--trait); margin-top: 4px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+.legende { display: flex; gap: 18px; flex-wrap: wrap; margin-top: 16px; }
+.legende span {
+  display: inline-flex; align-items: center; gap: 7px;
+  font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--gris);
+}
+.pastille { width: 11px; height: 11px; border-radius: 2px; display: inline-block; }
+
+.courbe { width: 100%; height: auto; display: block; }
+.courbe .grille-h { stroke: var(--trait); stroke-width: 1; }
+.courbe .axe { stroke: var(--encre); stroke-width: 1; }
+.courbe .lib {
+  font-family: var(--mono); font-size: 10px; fill: var(--gris);
+}
+.courbe polyline { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<div class="enveloppe">
+
+  <header class="entete">
+    <h1>Caisse</h1>
+    <span class="route">Transferts Maurice &rsaquo; Madagascar et finances personnelles</span>
+    <span class="etat-sync" id="etat-sync" data-etat="cours" role="status" aria-live="polite">Connexion</span>
+  </header>
+
+  <div class="barre-outils">
+    <button class="bouton secondaire mini" id="btn-export">Exporter la sauvegarde</button>
+    <button class="bouton secondaire mini" id="btn-import">Importer une sauvegarde</button>
+    <button class="bouton secondaire mini" id="btn-essai">Charger le jeu d'essai</button>
+    <button class="bouton danger mini" id="btn-vider">Tout effacer</button>
+    <input type="file" id="fichier-import" accept="application/json" hidden>
+  </div>
+
+  <div class="avert" id="avert-stockage" hidden></div>
+
+  <nav class="nav-vues">
+    <button data-vue="transferts" aria-current="true">Transferts</button>
+    <button data-vue="finances" aria-current="false">Mes finances</button>
+    <button data-vue="stats" aria-current="false">Statistiques</button>
+  </nav>
+
+  <!-- ============ VUE TRANSFERTS ============ -->
+  <div class="vue" id="vue-transferts">
+
+    <section class="couverture" aria-labelledby="t-couv">
+      <p class="couverture-titre" id="t-couv">Couverture de caisse</p>
+      <div class="jauge" id="jauge">
+        <div class="jauge-du" id="jauge-du" style="width:0%"></div>
+        <div class="jauge-mien" id="jauge-mien" style="width:0%"></div>
+        <div class="jauge-vide"></div>
+        <div class="jauge-legende">
+          <span id="leg-gauche"></span>
+          <span id="leg-droite"></span>
+        </div>
+      </div>
+
+      <dl class="chiffres">
+        <div class="chiffre"><dt>En caisse</dt><dd id="c-caisse">0</dd></div>
+        <div class="chiffre"><dt>Du aux clients</dt><dd id="c-du">0</dd></div>
+        <div class="chiffre"><dt>Mon argent</dt><dd id="c-mien">0</dd></div>
+        <div class="chiffre"><dt>Clients actifs</dt><dd id="c-nb">0</dd></div>
+      </dl>
+
+      <div class="saisie-caisse">
+        <label>Banque <input type="number" id="in-banque" step="0.01" inputmode="decimal"></label>
+        <label>Liquide <input type="number" id="in-liquide" step="0.01" inputmode="decimal"></label>
+      </div>
+
+      <div class="bandeau-manque" id="bandeau-manque" hidden></div>
+    </section>
+
+    <div class="grille">
+      <aside class="bloc">
+        <div class="bloc-entete">
+          <h2>Clients</h2>
+          <button class="bouton mini" id="btn-nouveau-client">Ajouter</button>
+        </div>
+        <form class="formulaire" id="form-client" hidden style="margin:16px;">
+          <span class="titre-form">Nouveau client</span>
+          <div class="champs">
+            <div class="champ large">
+              <label for="cl-nom">Nom</label>
+              <input type="text" id="cl-nom" required autocomplete="off">
+            </div>
+            <div class="champ large">
+              <label for="cl-tel">Telephone a Maurice (facultatif)</label>
+              <input type="text" id="cl-tel" autocomplete="off">
+            </div>
+          </div>
+          <div class="actions-form">
+            <button type="submit" class="bouton">Enregistrer</button>
+            <button type="button" class="bouton secondaire" id="btn-annuler-client">Annuler</button>
+          </div>
+        </form>
+        <ul class="liste-clients" id="liste-clients"></ul>
+        <p class="vide" id="clients-vides">Aucun client pour l'instant. Ajoute-en un, ou charge le jeu d'essai.</p>
+      </aside>
+
+      <section class="bloc" id="detail">
+        <p class="vide" id="detail-vide">Choisis un client a gauche pour voir son solde, ses destinataires et son historique.</p>
+
+        <div id="detail-contenu" hidden>
+          <div class="detail-entete">
+            <div>
+              <h2 id="d-nom"></h2>
+              <p class="sous" id="d-sous"></p>
+            </div>
+            <div class="solde-client">
+              <span class="sous">Reste chez moi</span>
+              <span class="valeur" id="d-solde">0</span>
+            </div>
+          </div>
+
+          <div class="onglets" role="tablist">
+            <button class="onglet" role="tab" id="tab-ops" aria-selected="true" aria-controls="pan-ops">Operations</button>
+            <button class="onglet" role="tab" id="tab-contacts" aria-selected="false" aria-controls="pan-contacts">Destinataires</button>
+          </div>
+
+          <div class="panneau" id="pan-ops" role="tabpanel" aria-labelledby="tab-ops">
+            <form class="formulaire" id="form-op">
+              <span class="titre-form">Nouvelle operation</span>
+              <div class="champs">
+                <div class="champ">
+                  <label for="op-type">Type</label>
+                  <select id="op-type">
+                    <option value="depot">Depot (il me donne)</option>
+                    <option value="envoi">Envoi vers Mada</option>
+                    <option value="remise">Remise (je lui rends)</option>
+                  </select>
+                </div>
+                <div class="champ">
+                  <label for="op-date">Date</label>
+                  <input type="date" id="op-date" required>
+                </div>
+                <div class="champ">
+                  <label for="op-rs">Montant en Rs</label>
+                  <input type="number" id="op-rs" step="0.01" min="0" inputmode="decimal" required>
+                </div>
+                <div class="champ" id="champ-ar" hidden>
+                  <label for="op-ar">Montant en Ariary</label>
+                  <input type="number" id="op-ar" step="1" min="0" inputmode="numeric">
+                </div>
+                <div class="champ large" id="champ-contact" hidden>
+                  <label for="op-contact">Destinataire</label>
+                  <select id="op-contact"></select>
+                </div>
+                <div class="champs" id="champ-nouveau-contact" hidden style="grid-column:1/-1;">
+                  <div class="champ">
+                    <label for="nc-nom">Nom du destinataire</label>
+                    <input type="text" id="nc-nom" autocomplete="off">
+                  </div>
+                  <div class="champ">
+                    <label for="nc-num">Numero</label>
+                    <input type="text" id="nc-num" autocomplete="off">
+                  </div>
+                  <div class="champ">
+                    <label for="nc-ville">Ville (facultatif)</label>
+                    <input type="text" id="nc-ville" autocomplete="off">
+                  </div>
+                </div>
+                <div class="champ large">
+                  <label for="op-note">Note (facultatif)</label>
+                  <input type="text" id="op-note" autocomplete="off">
+                </div>
+              </div>
+              <div class="actions-form">
+                <button type="submit" class="bouton">Ajouter l'operation</button>
+              </div>
+            </form>
+
+            <div class="tableau-enveloppe">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Date</th><th>Type</th><th>Destinataire</th>
+                    <th class="num">Rs</th><th class="num">Ariary</th><th class="num">Solde apres</th><th></th>
+                  </tr>
+                </thead>
+                <tbody id="corps-ops"></tbody>
+              </table>
+            </div>
+            <p class="vide" id="ops-vides" hidden>Aucune operation enregistree pour ce client.</p>
+          </div>
+
+          <div class="panneau" id="pan-contacts" role="tabpanel" aria-labelledby="tab-contacts" hidden>
+            <form class="formulaire" id="form-contact">
+              <span class="titre-form">Nouveau destinataire</span>
+              <div class="champs">
+                <div class="champ">
+                  <label for="ct-nom">Nom</label>
+                  <input type="text" id="ct-nom" required autocomplete="off">
+                </div>
+                <div class="champ">
+                  <label for="ct-num">Numero</label>
+                  <input type="text" id="ct-num" required autocomplete="off">
+                </div>
+                <div class="champ">
+                  <label for="ct-ville">Ville (facultatif)</label>
+                  <input type="text" id="ct-ville" autocomplete="off">
+                </div>
+              </div>
+              <div class="actions-form">
+                <button type="submit" class="bouton">Enregistrer</button>
+              </div>
+            </form>
+            <ul class="liste-contacts" id="liste-contacts"></ul>
+            <p class="vide" id="contacts-vides" hidden>Aucun destinataire enregistre pour ce client.</p>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <!-- ============ VUE FINANCES ============ -->
+  <div class="vue" id="vue-finances" hidden>
+
+    <div class="bloc">
+      <div class="bloc-entete">
+        <h2>Periode analysee</h2>
+        <div class="filtre-periode">
+          <select id="fin-periode">
+            <option value="1">Mois en cours</option>
+            <option value="3">3 derniers mois</option>
+            <option value="6">6 derniers mois</option>
+            <option value="12" selected>12 derniers mois</option>
+            <option value="0">Tout l'historique</option>
+          </select>
+        </div>
+      </div>
+      <div class="bloc-corps" style="padding:0;">
+        <dl class="chiffres" style="border:none;border-top:1px solid var(--trait);">
+          <div class="chiffre"><dt>Revenus</dt><dd id="f-revenus" class="pos">0</dd></div>
+          <div class="chiffre"><dt>Depenses</dt><dd id="f-depenses" class="neg">0</dd></div>
+          <div class="chiffre"><dt>Reste</dt><dd id="f-reste">0</dd></div>
+          <div class="chiffre"><dt>Depense moyenne / mois</dt><dd id="f-moyenne">0</dd></div>
+          <div class="chiffre"><dt>Taux d'epargne</dt><dd id="f-epargne">0</dd></div>
+        </dl>
+      </div>
+    </div>
+
+    <div class="bloc">
+      <div class="bloc-entete"><h2>Controle de coherence</h2></div>
+      <div class="bloc-corps">
+        <div class="champs" style="max-width:420px;">
+          <div class="champ">
+            <label for="in-ouverture">Mon argent au depart (Rs)</label>
+            <input type="number" id="in-ouverture" step="0.01" inputmode="decimal">
+          </div>
+        </div>
+        <dl class="chiffres" style="margin-top:18px;">
+          <div class="chiffre"><dt>Mon argent reel</dt><dd id="k-reel"><small>caisse moins ce que je dois</small>0</dd></div>
+          <div class="chiffre"><dt>Mon argent theorique</dt><dd id="k-theorique"><small>depart plus revenus moins depenses</small>0</dd></div>
+          <div class="chiffre"><dt>Ecart</dt><dd id="k-ecart">0</dd></div>
+        </dl>
+        <div id="k-message"></div>
+      </div>
+    </div>
+
+    <div class="bloc">
+      <div class="bloc-entete"><h2>Nouvelle ecriture</h2></div>
+      <div class="bloc-corps">
+        <form class="formulaire" id="form-fin" style="margin-bottom:0;">
+          <div class="champs">
+            <div class="champ">
+              <label for="fn-type">Type</label>
+              <select id="fn-type">
+                <option value="depense">Depense</option>
+                <option value="revenu">Revenu</option>
+              </select>
+            </div>
+            <div class="champ">
+              <label for="fn-date">Date</label>
+              <input type="date" id="fn-date" required>
+            </div>
+            <div class="champ">
+              <label for="fn-montant">Montant en Rs</label>
+              <input type="number" id="fn-montant" step="0.01" min="0" inputmode="decimal" required>
+            </div>
+            <div class="champ">
+              <label for="fn-categorie">Categorie</label>
+              <input type="text" id="fn-categorie" list="liste-categories" autocomplete="off" required>
+              <datalist id="liste-categories"></datalist>
+            </div>
+            <div class="champ large">
+              <label for="fn-libelle">Libelle (facultatif)</label>
+              <input type="text" id="fn-libelle" autocomplete="off">
+            </div>
+          </div>
+          <div class="actions-form">
+            <button type="submit" class="bouton">Enregistrer</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div class="bloc">
+      <div class="bloc-entete"><h2>Depenses par categorie</h2></div>
+      <div class="bloc-corps">
+        <div class="barres-h" id="graph-categories"></div>
+        <p class="vide" id="categories-vides" hidden style="padding:0;">Aucune depense sur cette periode.</p>
+      </div>
+    </div>
+
+    <div class="bloc">
+      <div class="bloc-entete"><h2>Revenus et depenses par mois</h2></div>
+      <div class="bloc-corps">
+        <div class="colonnes" id="graph-mensuel"></div>
+        <div class="legende">
+          <span><i class="pastille" style="background:var(--credit)"></i> Revenus</span>
+          <span><i class="pastille" style="background:var(--debit)"></i> Depenses</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="bloc">
+      <div class="bloc-entete"><h2>Ecritures</h2></div>
+      <div class="bloc-corps" style="padding:0 20px 20px;">
+        <div class="tableau-enveloppe">
+          <table>
+            <thead>
+              <tr><th>Date</th><th>Type</th><th>Categorie</th><th>Libelle</th><th class="num">Montant</th><th></th></tr>
+            </thead>
+            <tbody id="corps-fin"></tbody>
+          </table>
+        </div>
+        <p class="vide" id="fin-vides" hidden style="padding:20px 0 0;">Aucune ecriture sur cette periode.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ VUE STATISTIQUES ============ -->
+  <div class="vue" id="vue-stats" hidden>
+
+    <div class="bloc">
+      <div class="bloc-entete">
+        <h2>Activite des transferts</h2>
+        <div class="filtre-periode">
+          <select id="st-periode">
+            <option value="3">3 derniers mois</option>
+            <option value="6">6 derniers mois</option>
+            <option value="12" selected>12 derniers mois</option>
+            <option value="0">Tout l'historique</option>
+          </select>
+        </div>
+      </div>
+      <div class="bloc-corps" style="padding:0;">
+        <dl class="chiffres" style="border:none;border-top:1px solid var(--trait);">
+          <div class="chiffre"><dt>Total envoye</dt><dd id="s-total-rs">0</dd></div>
+          <div class="chiffre"><dt>Total en ariary</dt><dd id="s-total-ar">0</dd></div>
+          <div class="chiffre"><dt>Nombre d'envois</dt><dd id="s-nb">0</dd></div>
+          <div class="chiffre"><dt>Envoi moyen</dt><dd id="s-moyen">0</dd></div>
+          <div class="chiffre"><dt>Taux moyen constate</dt><dd id="s-taux">0</dd></div>
+        </dl>
+      </div>
+    </div>
+
+    <div class="bloc">
+      <div class="bloc-entete">
+        <h2>Frequence d'envoi par client</h2>
+        <span class="sous">Nombre d'envois par mois</span>
+      </div>
+      <div class="bloc-corps">
+        <div id="graph-frequence"></div>
+        <div class="legende" id="legende-frequence"></div>
+      </div>
+    </div>
+
+    <div class="bloc">
+      <div class="bloc-entete">
+        <h2>Volume envoye par mois</h2>
+        <span class="sous">Total en roupies</span>
+      </div>
+      <div class="bloc-corps">
+        <div id="graph-volume"></div>
+      </div>
+    </div>
+
+    <div class="bloc">
+      <div class="bloc-entete"><h2>Qui a envoye le plus</h2></div>
+      <div class="bloc-corps">
+        <div class="barres-h" id="graph-clients"></div>
+        <p class="vide" id="clients-stats-vides" hidden style="padding:0;">Aucun envoi sur cette periode.</p>
+      </div>
+    </div>
+
+    <div class="bloc">
+      <div class="bloc-entete"><h2>Classement detaille</h2></div>
+      <div class="bloc-corps" style="padding:0 20px 20px;">
+        <div class="tableau-enveloppe">
+          <table>
+            <thead>
+              <tr>
+                <th>Client</th><th class="num">Envois</th><th class="num">Total Rs</th>
+                <th class="num">Total Ar</th><th class="num">Envoi moyen</th>
+                <th class="num">Tous les</th><th>Dernier envoi</th>
+              </tr>
+            </thead>
+            <tbody id="corps-classement"></tbody>
+          </table>
+        </div>
+        <p class="vide" id="classement-vide" hidden style="padding:20px 0 0;">Aucun envoi sur cette periode.</p>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+'use strict';
+// @ts-check
+
+// ---------- Constantes ----------
+/**
+ * Connexion Supabase. La cle publiable est concue pour etre exposee dans le
+ * navigateur : les droits reels sont fixes par les policies RLS du projet.
+ */
+const SUPABASE_URL = 'https://vuznzycuiomaedoebvkg.supabase.co';
+const SUPABASE_CLE = 'sb_publishable_91XYUpWzaSwjwU4QMZStvw_0ULyCzV5';
+
+/** Ancienne cle localStorage, conservee pour la reprise des donnees existantes. */
+const CLE = 'caisse-transferts:v2';
+
+const CATEGORIES_DEFAUT = [
+  'Salaire', 'Freelance', 'Commission transfert',
+  'Courses', 'Transport', 'Loyer', 'Factures', 'Telecom',
+  'Sante', 'Loisirs', 'Famille', 'Materiel', 'Autre'
+];
+
+const COULEURS_SERIES = ['#1F5C4A', '#A33B2A', '#2B4C7E', '#8A6D1B', '#5E4A7E', '#3E7A8A'];
+
+const MOIS_COURTS = ['janv', 'fevr', 'mars', 'avr', 'mai', 'juin', 'juil', 'aout', 'sept', 'oct', 'nov', 'dec'];
+
+function etatVide() {
+  return {
+    version: 2,
+    clients: [], contacts: [], operations: [], finances: [],
+    caisse: { banque: 0, liquide: 0 },
+    ouverture: 0
+  };
+}
+
+let etat = etatVide();
+let clientActif = null;
+let vueActive = 'transferts';
+
+const $ = (id) => document.getElementById(id);
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) =>
+  ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+
+const nfRs = new Intl.NumberFormat('fr-FR', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+const nfAr = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 });
+const nf1 = new Intl.NumberFormat('fr-FR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+const rs = (n) => nfRs.format(n) + ' Rs';
+
+// ---------- Connexion a la base ----------
+const sb = (window.supabase && typeof window.supabase.createClient === 'function')
+  ? window.supabase.createClient(SUPABASE_URL, SUPABASE_CLE, { auth: { persistSession: false } })
+  : null;
+
+const TABLES = ['clients', 'contacts', 'operations', 'finances'];
+
+/** Enregistrement de l'application vers une ligne Postgres. */
+const versLigne = {
+  clients: (c) => ({
+    id: c.id, nom: c.nom, telephone: c.telephone || '', cree: c.cree || 0
+  }),
+  contacts: (c) => ({
+    id: c.id, client_id: c.clientId, nom: c.nom,
+    numero: c.numero || '', ville: c.ville || '', cree: c.cree || 0
+  }),
+  operations: (o) => ({
+    id: o.id, client_id: o.clientId, type: o.type, date: o.date,
+    montant_rs: o.montantRs || 0, montant_ar: o.montantAr || 0,
+    contact_id: o.contactId || null, note: o.note || '', cree: o.cree || 0
+  }),
+  finances: (f) => ({
+    id: f.id, type: f.type, date: f.date, montant: f.montant || 0,
+    categorie: f.categorie || '', libelle: f.libelle || '', cree: f.cree || 0
+  })
+};
+
+/** Ligne Postgres vers enregistrement de l'application. */
+const depuisLigne = {
+  clients: (r) => ({
+    id: r.id, nom: r.nom, telephone: r.telephone || '', cree: Number(r.cree) || 0
+  }),
+  contacts: (r) => ({
+    id: r.id, clientId: r.client_id, nom: r.nom,
+    numero: r.numero || '', ville: r.ville || '', cree: Number(r.cree) || 0
+  }),
+  operations: (r) => ({
+    id: r.id, clientId: r.client_id, type: r.type, date: r.date,
+    montantRs: Number(r.montant_rs) || 0, montantAr: Number(r.montant_ar) || 0,
+    contactId: r.contact_id, note: r.note || '', cree: Number(r.cree) || 0
+  }),
+  finances: (r) => ({
+    id: r.id, type: r.type, date: r.date, montant: Number(r.montant) || 0,
+    categorie: r.categorie || '', libelle: r.libelle || '', cree: Number(r.cree) || 0
+  })
+};
+
+function marquerEtat(code, texte) {
+  const el = $('etat-sync');
+  el.setAttribute('data-etat', code);
+  el.textContent = texte;
+}
+
+function signaler(message) {
+  const a = $('avert-stockage');
+  a.hidden = !message;
+  a.textContent = message || '';
+}
+
+const messageErreur = (e) => (e && e.message) ? e.message : 'erreur reseau';
+
+function normaliser(d) {
+  return {
+    version: 2,
+    clients: Array.isArray(d.clients) ? d.clients : [],
+    contacts: Array.isArray(d.contacts) ? d.contacts : [],
+    operations: Array.isArray(d.operations) ? d.operations : [],
+    finances: Array.isArray(d.finances) ? d.finances : [],
+    caisse: {
+      banque: Number(d.caisse && d.caisse.banque) || 0,
+      liquide: Number(d.caisse && d.caisse.liquide) || 0
+    },
+    ouverture: Number(d.ouverture) || 0
+  };
+}
+
+// ---------- Lecture de la base ----------
+/** Lit les cinq tables et remplace l'etat en memoire. Leve en cas d'echec. */
+async function charger() {
+  const [cl, ct, op, fi, rg] = await Promise.all([
+    sb.from('clients').select('*').order('cree').range(0, 49999),
+    sb.from('contacts').select('*').order('cree').range(0, 49999),
+    sb.from('operations').select('*').order('cree').range(0, 49999),
+    sb.from('finances').select('*').order('cree').range(0, 49999),
+    sb.from('reglages').select('*').eq('id', 1).maybeSingle()
+  ]);
+
+  const echec = [cl, ct, op, fi, rg].find((r) => r.error);
+  if (echec) throw echec.error;
+
+  const r = rg.data || {};
+  etat = {
+    version: 2,
+    clients: (cl.data || []).map(depuisLigne.clients),
+    contacts: (ct.data || []).map(depuisLigne.contacts),
+    operations: (op.data || []).map(depuisLigne.operations),
+    finances: (fi.data || []).map(depuisLigne.finances),
+    caisse: { banque: Number(r.banque) || 0, liquide: Number(r.liquide) || 0 },
+    ouverture: Number(r.ouverture) || 0
+  };
+  memoriserInstantane();
+}
+
+// ---------- Ecriture dans la base ----------
+/**
+ * L'etat en memoire reste la source d'affichage : apres chaque modification on
+ * compare les enregistrements a l'instantane du dernier enregistrement reussi,
+ * et on n'envoie que les lignes creees, modifiees ou supprimees.
+ */
+let instantane = { clients: new Map(), contacts: new Map(), operations: new Map(), finances: new Map(), reglages: '' };
+let pretAEcrire = false;
+let ecritureEnCours = false;
+let ecritureDemandee = false;
+let minuteur = null;
+
+function lignesActuelles(nom) {
+  const m = new Map();
+  for (const e of etat[nom]) m.set(e.id, versLigne[nom](e));
+  return m;
+}
+
+const ligneReglages = () => ({
+  id: 1,
+  banque: etat.caisse.banque || 0,
+  liquide: etat.caisse.liquide || 0,
+  ouverture: etat.ouverture || 0
+});
+
+function memoriserInstantane() {
+  for (const nom of TABLES) {
+    const m = new Map();
+    for (const [id, ligne] of lignesActuelles(nom)) m.set(id, JSON.stringify(ligne));
+    instantane[nom] = m;
+  }
+  instantane.reglages = JSON.stringify(ligneReglages());
+}
+
+function morceaux(liste, taille) {
+  const lots = [];
+  for (let i = 0; i < liste.length; i += taille) lots.push(liste.slice(i, i + taille));
+  return lots;
+}
+
+async function ecrire() {
+  if (!pretAEcrire) return;
+  if (ecritureEnCours) { ecritureDemandee = true; return; }
+  ecritureEnCours = true;
+  marquerEtat('cours', 'Enregistrement');
+
+  try {
+    const actuelles = {}, aEcrire = {}, aSupprimer = {};
+    for (const nom of TABLES) {
+      actuelles[nom] = lignesActuelles(nom);
+      aEcrire[nom] = [];
+      for (const [id, ligne] of actuelles[nom]) {
+        if (instantane[nom].get(id) !== JSON.stringify(ligne)) aEcrire[nom].push(ligne);
+      }
+      aSupprimer[nom] = [...instantane[nom].keys()].filter((id) => !actuelles[nom].has(id));
+    }
+
+    // Suppressions : les enfants avant les parents.
+    for (const nom of ['operations', 'finances', 'contacts', 'clients']) {
+      for (const lot of morceaux(aSupprimer[nom], 200)) {
+        const { error } = await sb.from(nom).delete().in('id', lot);
+        if (error) throw error;
+      }
+    }
+
+    // Ecritures : les parents avant les enfants.
+    for (const nom of ['clients', 'contacts', 'operations', 'finances']) {
+      for (const lot of morceaux(aEcrire[nom], 300)) {
+        const { error } = await sb.from(nom).upsert(lot);
+        if (error) throw error;
+      }
+    }
+
+    const reglages = ligneReglages();
+    if (JSON.stringify(reglages) !== instantane.reglages) {
+      const { error } = await sb.from('reglages')
+        .upsert(Object.assign({}, reglages, { maj: new Date().toISOString() }));
+      if (error) throw error;
+    }
+
+    memoriserInstantane();
+    marquerEtat('pret', 'Enregistre');
+    signaler('');
+  } catch (e) {
+    console.error('Enregistrement impossible', e);
+    marquerEtat('erreur', 'Non enregistre');
+    signaler('Les dernieres modifications ne sont pas enregistrees (' + messageErreur(e) +
+      '). Nouvelle tentative dans quelques secondes. Ne ferme pas la page.');
+    setTimeout(sauvegarder, 6000);
+  } finally {
+    ecritureEnCours = false;
+    if (ecritureDemandee) { ecritureDemandee = false; sauvegarder(); }
+  }
+}
+
+/** Planifie un enregistrement. Conserve son nom : appele apres chaque modification. */
+function sauvegarder() {
+  if (!pretAEcrire) return;
+  marquerEtat('cours', 'Modification');
+  clearTimeout(minuteur);
+  minuteur = setTimeout(ecrire, 600);
+}
+
+/** Reprise unique des donnees restees dans le navigateur avant le passage en ligne. */
+async function reprendreDonneesLocales() {
+  if (TABLES.some((nom) => etat[nom].length > 0)) return;
+  let brut = null;
+  try {
+    brut = window.localStorage.getItem(CLE) || window.localStorage.getItem('caisse-transferts:v1');
+  } catch (e) { return; }
+  if (!brut) return;
+
+  let donnees;
+  try { donnees = normaliser(JSON.parse(brut)); } catch (e) { return; }
+  if (!donnees.clients.length && !donnees.finances.length) return;
+
+  if (!confirm('Des donnees enregistrees dans ce navigateur ont ete trouvees. ' +
+    'Les transferer vers la base en ligne ?')) return;
+
+  etat = donnees;
+  clientActif = etat.clients.length ? etat.clients[0].id : null;
+  synchroniserChamps(); sauvegarder(); rendre();
+}
+
+// ---------- Utilitaires dates ----------
+const moisDe = (iso) => (iso || '').slice(0, 7);
+
+function libelleMois(ym) {
+  const [a, m] = ym.split('-');
+  return MOIS_COURTS[Number(m) - 1] + ' ' + a.slice(2);
+}
+
+function derniersMois(n) {
+  const liste = [];
+  const d = new Date();
+  d.setDate(1);
+  for (let i = n - 1; i >= 0; i--) {
+    const t = new Date(d.getFullYear(), d.getMonth() - i, 1);
+    liste.push(t.getFullYear() + '-' + String(t.getMonth() + 1).padStart(2, '0'));
+  }
+  return liste;
+}
+
+function moisEntre(debut, fin) {
+  const liste = [];
+  let [a, m] = debut.split('-').map(Number);
+  const [af, mf] = fin.split('-').map(Number);
+  while (a < af || (a === af && m <= mf)) {
+    liste.push(a + '-' + String(m).padStart(2, '0'));
+    m++;
+    if (m > 12) { m = 1; a++; }
+  }
+  return liste;
+}
+
+/** Renvoie la liste des mois couverts par la periode choisie. */
+function moisPeriode(nbMois, dates) {
+  if (nbMois > 0) return derniersMois(nbMois);
+  if (!dates.length) return derniersMois(1);
+  const tous = dates.map(moisDe).filter(Boolean).sort();
+  return moisEntre(tous[0], tous[tous.length - 1]).slice(-36);
+}
+
+// ---------- Calculs transferts ----------
+const signe = (op) => (op.type === 'depot' ? 1 : -1);
+
+function soldeClient(clientId) {
+  return etat.operations
+    .filter((o) => o.clientId === clientId)
+    .reduce((t, o) => t + signe(o) * o.montantRs, 0);
+}
+
+const totalDu = () => etat.clients.reduce((t, c) => t + Math.max(0, soldeClient(c.id)), 0);
+
+function opsTriees(clientId) {
+  return etat.operations
+    .filter((o) => o.clientId === clientId)
+    .sort((a, b) => (a.date === b.date ? a.cree - b.cree : a.date < b.date ? -1 : 1));
+}
+
+function dateCourte(iso) {
+  if (!iso) return '-';
+  const [a, m, j] = iso.split('-');
+  return j + '/' + m + '/' + a.slice(2);
+}
+
+// ---------- Generateurs de graphiques ----------
+function echelle(max, n) {
+  n = n || 4;
+  if (!(max > 0)) return { max: 1, ticks: [0, 1] };
+  const brut = max / n;
+  const mag = Math.pow(10, Math.floor(Math.log10(brut)));
+  const pas = [1, 2, 2.5, 5, 10].map((m) => m * mag).find((p) => p >= brut) || 10 * mag;
+  const maxA = Math.ceil(max / pas) * pas;
+  const ticks = [];
+  for (let v = 0; v <= maxA + pas / 1000; v += pas) ticks.push(v);
+  return { max: maxA, ticks };
+}
+
+/**
+ * Courbe multi-series en SVG.
+ * @param {string[]} mois
+ * @param {Array<{label:string, couleur:string, valeurs:number[]}>} series
+ * @param {(v:number)=>string} formatY
+ */
+function courbeSVG(mois, series, formatY) {
+  const W = 780, H = 300, ml = 58, mr = 14, mt = 16, mb = 34;
+  const iw = W - ml - mr, ih = H - mt - mb;
+  const maxBrut = Math.max(0, ...series.flatMap((s) => s.valeurs));
+  const ech = echelle(maxBrut, 4);
+  const x = (i) => (mois.length <= 1 ? ml + iw / 2 : ml + (i * iw) / (mois.length - 1));
+  const y = (v) => mt + ih - (v / ech.max) * ih;
+
+  const grilles = ech.ticks.map((t) =>
+    '<line class="grille-h" x1="' + ml + '" y1="' + y(t).toFixed(1) + '" x2="' + (W - mr) + '" y2="' + y(t).toFixed(1) + '"/>' +
+    '<text class="lib" x="' + (ml - 8) + '" y="' + (y(t) + 3.5).toFixed(1) + '" text-anchor="end">' + esc(formatY(t)) + '</text>'
+  ).join('');
+
+  // Un libelle sur deux si trop de mois
+  const pasLib = mois.length > 12 ? Math.ceil(mois.length / 12) : 1;
+  const libX = mois.map((m, i) => (i % pasLib === 0
+    ? '<text class="lib" x="' + x(i).toFixed(1) + '" y="' + (H - 12) + '" text-anchor="middle">' + esc(libelleMois(m)) + '</text>'
+    : '')).join('');
+
+  const traces = series.map((s) => {
+    const pts = s.valeurs.map((v, i) => x(i).toFixed(1) + ',' + y(v).toFixed(1)).join(' ');
+    const points = s.valeurs.map((v, i) =>
+      '<circle cx="' + x(i).toFixed(1) + '" cy="' + y(v).toFixed(1) + '" r="3" fill="' + s.couleur + '"/>'
+    ).join('');
+    return '<polyline points="' + pts + '" stroke="' + s.couleur + '"/>' + points;
+  }).join('');
+
+  return '<svg class="courbe" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Courbe">' +
+    grilles +
+    '<line class="axe" x1="' + ml + '" y1="' + (mt + ih) + '" x2="' + (W - mr) + '" y2="' + (mt + ih) + '"/>' +
+    libX + traces +
+    '</svg>';
+}
+
+/**
+ * Barres horizontales.
+ * @param {Array<{label:string, valeur:number, extra?:string, couleur?:string}>} lignes
+ * @param {(v:number)=>string} format
+ */
+function barresH(lignes, format) {
+  const max = Math.max(1, ...lignes.map((l) => l.valeur));
+  return lignes.map((l, i) =>
+    '<div class="barre-h">' +
+    '<span class="etiq" title="' + esc(l.label) + '">' + esc(l.label) + '</span>' +
+    '<span class="piste"><span class="remplissage" style="width:' +
+      ((l.valeur / max) * 100).toFixed(1) + '%;background:' +
+      (l.couleur || COULEURS_SERIES[i % COULEURS_SERIES.length]) + '"></span></span>' +
+    '<span class="val">' + esc(format(l.valeur)) +
+      (l.extra ? ' <em>' + esc(l.extra) + '</em>' : '') + '</span>' +
+    '</div>'
+  ).join('');
+}
+
+// ---------- Rendu : couverture ----------
+function rendreCouverture() {
+  const caisse = etat.caisse.banque + etat.caisse.liquide;
+  const du = totalDu();
+  const mien = caisse - du;
+
+  $('c-caisse').textContent = rs(caisse);
+  $('c-du').textContent = rs(du);
+  $('c-nb').textContent = String(etat.clients.filter((c) => soldeClient(c.id) > 0).length);
+
+  const elMien = $('c-mien');
+  elMien.textContent = rs(mien);
+  elMien.className = mien < 0 ? 'neg' : mien > 0 ? 'pos' : '';
+
+  const base = Math.max(caisse, du, 1);
+  $('jauge-du').style.width = (Math.min(du, base) / base) * 100 + '%';
+  $('jauge-mien').style.width = (mien > 0 ? (mien / base) * 100 : 0) + '%';
+  $('jauge').classList.toggle('decouvert', mien < 0);
+
+  $('leg-gauche').textContent = du > 0 ? 'Du aux clients ' + rs(du) : 'Rien du';
+  $('leg-droite').textContent = mien > 0 ? 'A moi ' + rs(mien) : '';
+
+  const bandeau = $('bandeau-manque');
+  if (mien < 0) {
+    bandeau.hidden = false;
+    bandeau.textContent = 'Il manque ' + rs(Math.abs(mien)) +
+      " pour couvrir ce que tu dois. Remets cette somme avant d'envoyer.";
+  } else {
+    bandeau.hidden = true;
+  }
+}
+
+// ---------- Rendu : clients et detail ----------
+function rendreClients() {
+  const clients = [...etat.clients].sort((a, b) => soldeClient(b.id) - soldeClient(a.id));
+  $('clients-vides').hidden = clients.length > 0;
+  $('liste-clients').innerHTML = clients.map((c) => {
+    const s = soldeClient(c.id);
+    return '<li><button class="client-btn" data-client="' + c.id + '"' +
+      (c.id === clientActif ? ' aria-current="true"' : '') + '>' +
+      '<span>' + esc(c.nom) + '</span>' +
+      '<span class="montant' + (s === 0 ? ' zero' : '') + '">' + rs(s) + '</span>' +
+      '</button></li>';
+  }).join('');
+}
+
+function rendreOperations(clientId) {
+  const ops = opsTriees(clientId);
+  $('ops-vides').hidden = ops.length > 0;
+  const libelles = { depot: 'Depot', envoi: 'Envoi', remise: 'Remise' };
+
+  let cumul = 0;
+  const lignes = ops.map((o) => {
+    cumul += signe(o) * o.montantRs;
+    const ct = etat.contacts.find((c) => c.id === o.contactId);
+    const taux = o.type === 'envoi' && o.montantAr && o.montantRs
+      ? '<span class="taux">' + nfAr.format(o.montantAr / o.montantRs) + ' Ar / Rs</span>' : '';
+    return '<tr>' +
+      '<td class="num">' + esc(dateCourte(o.date)) + '</td>' +
+      '<td><span class="etiquette ' + o.type + '">' + libelles[o.type] + '</span></td>' +
+      '<td>' + (ct
+        ? esc(ct.nom) + '<span class="destinataire-num">' + esc(ct.numero) +
+          (ct.ville ? ' &middot; ' + esc(ct.ville) : '') + '</span>'
+        : '<span class="destinataire-num">-</span>') +
+        (o.note ? '<span class="note-ligne">' + esc(o.note) + '</span>' : '') +
+      '</td>' +
+      '<td class="num">' + (signe(o) > 0 ? '+' : '-') + nfRs.format(o.montantRs) + '</td>' +
+      '<td class="num">' + (o.montantAr ? nfAr.format(o.montantAr) + taux : '-') + '</td>' +
+      '<td class="num">' + nfRs.format(cumul) + '</td>' +
+      '<td><button class="supprimer" data-suppr-op="' + o.id +
+        '" aria-label="Supprimer cette operation">&times;</button></td>' +
+      '</tr>';
+  });
+  $('corps-ops').innerHTML = lignes.reverse().join('');
+}
+
+function rendreContacts(clientId) {
+  const cts = etat.contacts.filter((c) => c.clientId === clientId);
+  $('contacts-vides').hidden = cts.length > 0;
+  $('liste-contacts').innerHTML = cts.map((c) =>
+    '<li><div><span class="nom">' + esc(c.nom) + '</span>' +
+    '<div class="meta">' + esc(c.numero) + (c.ville ? ' &middot; ' + esc(c.ville) : '') + '</div></div>' +
+    '<button class="supprimer" data-suppr-contact="' + c.id +
+    '" aria-label="Supprimer ce destinataire">&times;</button></li>'
+  ).join('');
+}
+
+function rendreSelectContacts(clientId) {
+  const cts = etat.contacts.filter((c) => c.clientId === clientId);
+  const sel = /** @type {HTMLSelectElement} */ ($('op-contact'));
+  const precedent = sel.value;
+  sel.innerHTML = cts.map((c) =>
+    '<option value="' + c.id + '">' + esc(c.nom) + ' - ' + esc(c.numero) + '</option>'
+  ).join('') + '<option value="__nouveau">+ Nouveau destinataire</option>';
+  if (precedent && [...sel.options].some((o) => o.value === precedent)) sel.value = precedent;
+  basculerNouveauContact();
+}
+
+function rendreDetail() {
+  const client = etat.clients.find((c) => c.id === clientActif);
+  $('detail-vide').hidden = !!client;
+  $('detail-contenu').hidden = !client;
+  if (!client) return;
+
+  const s = soldeClient(client.id);
+  $('d-nom').textContent = client.nom;
+  $('d-sous').textContent = client.telephone || 'Aucun telephone enregistre';
+  const elS = $('d-solde');
+  elS.textContent = rs(s);
+  elS.className = 'valeur' + (s < 0 ? ' neg' : s === 0 ? ' zero' : '');
+
+  rendreOperations(client.id);
+  rendreContacts(client.id);
+  rendreSelectContacts(client.id);
+}
+
+// ---------- Rendu : finances ----------
+function finPeriode() {
+  const n = Number(/** @type {HTMLSelectElement} */ ($('fin-periode')).value);
+  const mois = moisPeriode(n, etat.finances.map((f) => f.date));
+  const dans = new Set(mois);
+  return { mois, ecritures: etat.finances.filter((f) => dans.has(moisDe(f.date))) };
+}
+
+function rendreFinances() {
+  const { mois, ecritures } = finPeriode();
+  const revenus = ecritures.filter((f) => f.type === 'revenu').reduce((t, f) => t + f.montant, 0);
+  const depenses = ecritures.filter((f) => f.type === 'depense').reduce((t, f) => t + f.montant, 0);
+  const reste = revenus - depenses;
+
+  $('f-revenus').textContent = rs(revenus);
+  $('f-depenses').textContent = rs(depenses);
+  const elReste = $('f-reste');
+  elReste.textContent = rs(reste);
+  elReste.className = reste < 0 ? 'neg' : reste > 0 ? 'pos' : '';
+  $('f-moyenne').textContent = rs(depenses / Math.max(1, mois.length));
+  $('f-epargne').textContent = revenus > 0 ? nf1.format((reste / revenus) * 100) + ' %' : '-';
+
+  // Depenses par categorie
+  const parCat = {};
+  ecritures.filter((f) => f.type === 'depense').forEach((f) => {
+    parCat[f.categorie] = (parCat[f.categorie] || 0) + f.montant;
+  });
+  const cats = Object.keys(parCat)
+    .map((k) => ({ label: k, valeur: parCat[k] }))
+    .sort((a, b) => b.valeur - a.valeur);
+  $('categories-vides').hidden = cats.length > 0;
+  $('graph-categories').innerHTML = barresH(
+    cats.map((c) => ({
+      label: c.label,
+      valeur: c.valeur,
+      couleur: 'var(--debit)',
+      extra: depenses > 0 ? nf1.format((c.valeur / depenses) * 100) + ' %' : ''
+    })),
+    (v) => nfRs.format(v)
+  );
+
+  // Colonnes mensuelles
+  const parMois = {};
+  mois.forEach((m) => { parMois[m] = { r: 0, d: 0 }; });
+  ecritures.forEach((f) => {
+    const m = moisDe(f.date);
+    if (!parMois[m]) return;
+    if (f.type === 'revenu') parMois[m].r += f.montant;
+    else parMois[m].d += f.montant;
+  });
+  const maxMois = Math.max(1, ...mois.map((m) => Math.max(parMois[m].r, parMois[m].d)));
+  $('graph-mensuel').innerHTML = mois.map((m) =>
+    '<div class="colonne" title="' + esc(libelleMois(m)) + ' : revenus ' + rs(parMois[m].r) +
+      ', depenses ' + rs(parMois[m].d) + '">' +
+    '<div class="paire">' +
+    '<div class="barre revenu" style="height:' + ((parMois[m].r / maxMois) * 100).toFixed(1) + '%"></div>' +
+    '<div class="barre depense" style="height:' + ((parMois[m].d / maxMois) * 100).toFixed(1) + '%"></div>' +
+    '</div><span class="mois">' + esc(libelleMois(m)) + '</span></div>'
+  ).join('');
+
+  // Tableau
+  const triees = [...ecritures].sort((a, b) => (a.date === b.date ? b.cree - a.cree : a.date < b.date ? 1 : -1));
+  $('fin-vides').hidden = triees.length > 0;
+  $('corps-fin').innerHTML = triees.map((f) =>
+    '<tr>' +
+    '<td class="num">' + esc(dateCourte(f.date)) + '</td>' +
+    '<td><span class="etiquette ' + f.type + '">' + (f.type === 'revenu' ? 'Revenu' : 'Depense') + '</span></td>' +
+    '<td>' + esc(f.categorie) + '</td>' +
+    '<td>' + esc(f.libelle || '') + '</td>' +
+    '<td class="num">' + (f.type === 'revenu' ? '+' : '-') + nfRs.format(f.montant) + '</td>' +
+    '<td><button class="supprimer" data-suppr-fin="' + f.id + '" aria-label="Supprimer">&times;</button></td>' +
+    '</tr>'
+  ).join('');
+
+  rendreCoherence();
+  rendreDatalistCategories();
+}
+
+function rendreCoherence() {
+  const reel = etat.caisse.banque + etat.caisse.liquide - totalDu();
+  const revenusTous = etat.finances.filter((f) => f.type === 'revenu').reduce((t, f) => t + f.montant, 0);
+  const depensesTous = etat.finances.filter((f) => f.type === 'depense').reduce((t, f) => t + f.montant, 0);
+  const theorique = etat.ouverture + revenusTous - depensesTous;
+  const ecart = reel - theorique;
+
+  $('k-reel').innerHTML = '<small>caisse moins ce que je dois</small>' + esc(rs(reel));
+  $('k-theorique').innerHTML = '<small>depart plus revenus moins depenses</small>' + esc(rs(theorique));
+  const elE = $('k-ecart');
+  elE.textContent = (ecart > 0 ? '+' : '') + rs(ecart);
+  elE.className = Math.abs(ecart) < 0.5 ? 'pos' : 'neg';
+
+  const msg = $('k-message');
+  if (Math.abs(ecart) < 0.5) {
+    msg.className = 'bandeau-ok';
+    msg.textContent = 'Tout concorde. Chaque roupie est expliquee.';
+  } else if (ecart > 0) {
+    msg.className = 'bandeau-manque';
+    msg.textContent = 'Tu as ' + rs(ecart) + ' de plus que prevu. Il te manque probablement un revenu non saisi.';
+  } else {
+    msg.className = 'bandeau-manque';
+    msg.textContent = 'Il te manque ' + rs(Math.abs(ecart)) + ' par rapport a tes ecritures. Une depense n\'a pas ete saisie.';
+  }
+}
+
+function rendreDatalistCategories() {
+  const utilisees = [...new Set(etat.finances.map((f) => f.categorie).filter(Boolean))];
+  const toutes = [...new Set([...utilisees, ...CATEGORIES_DEFAUT])].sort();
+  $('liste-categories').innerHTML = toutes.map((c) => '<option value="' + esc(c) + '"></option>').join('');
+}
+
+// ---------- Rendu : statistiques ----------
+function rendreStats() {
+  const n = Number(/** @type {HTMLSelectElement} */ ($('st-periode')).value);
+  const envoisTous = etat.operations.filter((o) => o.type === 'envoi');
+  const mois = moisPeriode(n, envoisTous.map((o) => o.date));
+  const dans = new Set(mois);
+  const envois = envoisTous.filter((o) => dans.has(moisDe(o.date)));
+
+  const totalRs = envois.reduce((t, o) => t + o.montantRs, 0);
+  const totalAr = envois.reduce((t, o) => t + (o.montantAr || 0), 0);
+  const avecAr = envois.filter((o) => o.montantAr > 0);
+  const tauxMoyen = avecAr.length
+    ? avecAr.reduce((t, o) => t + o.montantAr, 0) / avecAr.reduce((t, o) => t + o.montantRs, 0) : 0;
+
+  $('s-total-rs').textContent = rs(totalRs);
+  $('s-total-ar').textContent = nfAr.format(totalAr) + ' Ar';
+  $('s-nb').textContent = String(envois.length);
+  $('s-moyen').textContent = envois.length ? rs(totalRs / envois.length) : '-';
+  $('s-taux').textContent = tauxMoyen ? nfAr.format(tauxMoyen) + ' Ar / Rs' : '-';
+
+  // Agregats par client
+  const parClient = {};
+  envois.forEach((o) => {
+    if (!parClient[o.clientId]) parClient[o.clientId] = { nb: 0, rs: 0, ar: 0, dates: [] };
+    const a = parClient[o.clientId];
+    a.nb++; a.rs += o.montantRs; a.ar += o.montantAr || 0; a.dates.push(o.date);
+  });
+  const classement = Object.keys(parClient).map((id) => {
+    const c = etat.clients.find((x) => x.id === id);
+    const a = parClient[id];
+    const dates = a.dates.slice().sort();
+    let cadence = null;
+    if (dates.length > 1) {
+      const j = (new Date(dates[dates.length - 1]).getTime() - new Date(dates[0]).getTime()) / 86400000;
+      cadence = j / (dates.length - 1);
+    }
+    return {
+      id, nom: c ? c.nom : 'Client supprime',
+      nb: a.nb, rs: a.rs, ar: a.ar,
+      moyen: a.rs / a.nb, cadence, dernier: dates[dates.length - 1]
+    };
+  }).sort((a, b) => b.rs - a.rs);
+
+  $('clients-stats-vides').hidden = classement.length > 0;
+  $('graph-clients').innerHTML = barresH(
+    classement.map((c) => ({
+      label: c.nom,
+      valeur: c.rs,
+      extra: c.nb + (c.nb > 1 ? ' envois' : ' envoi')
+    })),
+    (v) => nfRs.format(v)
+  );
+
+  $('classement-vide').hidden = classement.length > 0;
+  $('corps-classement').innerHTML = classement.map((c) =>
+    '<tr>' +
+    '<td>' + esc(c.nom) + '</td>' +
+    '<td class="num">' + c.nb + '</td>' +
+    '<td class="num">' + nfRs.format(c.rs) + '</td>' +
+    '<td class="num">' + (c.ar ? nfAr.format(c.ar) : '-') + '</td>' +
+    '<td class="num">' + nfRs.format(c.moyen) + '</td>' +
+    '<td class="num">' + (c.cadence ? nf1.format(c.cadence) + ' j' : '-') + '</td>' +
+    '<td class="num">' + esc(dateCourte(c.dernier)) + '</td>' +
+    '</tr>'
+  ).join('');
+
+  // Courbe de frequence : top 5 clients par nombre d'envois
+  const top = [...classement].sort((a, b) => b.nb - a.nb).slice(0, 5);
+  const series = top.map((c, i) => ({
+    label: c.nom,
+    couleur: COULEURS_SERIES[i % COULEURS_SERIES.length],
+    valeurs: mois.map((m) => envois.filter((o) => o.clientId === c.id && moisDe(o.date) === m).length)
+  }));
+
+  if (series.length === 0) {
+    $('graph-frequence').innerHTML = '<p class="vide" style="padding:0;">Aucun envoi a representer sur cette periode.</p>';
+    $('legende-frequence').innerHTML = '';
+  } else {
+    $('graph-frequence').innerHTML = courbeSVG(mois, series, (v) => nfRs.format(v));
+    $('legende-frequence').innerHTML = series.map((s) =>
+      '<span><i class="pastille" style="background:' + s.couleur + '"></i> ' + esc(s.label) + '</span>'
+    ).join('');
+  }
+
+  // Courbe de volume total par mois
+  const volumes = mois.map((m) =>
+    envois.filter((o) => moisDe(o.date) === m).reduce((t, o) => t + o.montantRs, 0));
+  $('graph-volume').innerHTML = envois.length
+    ? courbeSVG(mois, [{ label: 'Volume', couleur: 'var(--tampon)', valeurs: volumes }], (v) => nfRs.format(v))
+    : '<p class="vide" style="padding:0;">Aucun envoi a representer sur cette periode.</p>';
+}
+
+// ---------- Rendu global ----------
+function rendre() {
+  rendreCouverture();
+  rendreClients();
+  rendreDetail();
+  rendreFinances();
+  rendreStats();
+}
+
+function synchroniserChamps() {
+  /** @type {HTMLInputElement} */ ($('in-banque')).value = etat.caisse.banque ? String(etat.caisse.banque) : '';
+  /** @type {HTMLInputElement} */ ($('in-liquide')).value = etat.caisse.liquide ? String(etat.caisse.liquide) : '';
+  /** @type {HTMLInputElement} */ ($('in-ouverture')).value = etat.ouverture ? String(etat.ouverture) : '';
+}
+
+// ---------- Navigation ----------
+document.querySelector('.nav-vues').addEventListener('click', (e) => {
+  const btn = /** @type {HTMLElement} */ (e.target).closest('[data-vue]');
+  if (!btn) return;
+  vueActive = btn.getAttribute('data-vue');
+  document.querySelectorAll('.nav-vues button').forEach((b) =>
+    b.setAttribute('aria-current', String(b === btn)));
+  ['transferts', 'finances', 'stats'].forEach((v) => {
+    $('vue-' + v).hidden = v !== vueActive;
+  });
+});
+
+// ---------- Caisse ----------
+$('in-banque').addEventListener('input', (e) => {
+  etat.caisse.banque = parseFloat(/** @type {HTMLInputElement} */ (e.target).value) || 0;
+  rendreCouverture(); rendreCoherence(); sauvegarder();
+});
+$('in-liquide').addEventListener('input', (e) => {
+  etat.caisse.liquide = parseFloat(/** @type {HTMLInputElement} */ (e.target).value) || 0;
+  rendreCouverture(); rendreCoherence(); sauvegarder();
+});
+$('in-ouverture').addEventListener('input', (e) => {
+  etat.ouverture = parseFloat(/** @type {HTMLInputElement} */ (e.target).value) || 0;
+  rendreCoherence(); sauvegarder();
+});
+
+// ---------- Clients ----------
+$('btn-nouveau-client').addEventListener('click', () => {
+  $('form-client').hidden = false;
+  $('cl-nom').focus();
+});
+$('btn-annuler-client').addEventListener('click', () => {
+  $('form-client').hidden = true;
+  /** @type {HTMLFormElement} */ ($('form-client')).reset();
+});
+$('form-client').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const nom = /** @type {HTMLInputElement} */ ($('cl-nom')).value.trim();
+  if (!nom) return;
+  const client = {
+    id: uid(), nom,
+    telephone: /** @type {HTMLInputElement} */ ($('cl-tel')).value.trim(),
+    cree: Date.now()
+  };
+  etat.clients.push(client);
+  clientActif = client.id;
+  /** @type {HTMLFormElement} */ ($('form-client')).reset();
+  $('form-client').hidden = true;
+  sauvegarder(); rendre();
+});
+$('liste-clients').addEventListener('click', (e) => {
+  const btn = /** @type {HTMLElement} */ (e.target).closest('[data-client]');
+  if (!btn) return;
+  clientActif = btn.getAttribute('data-client');
+  choisirOnglet('ops');
+  rendreClients(); rendreDetail();
+});
+
+// ---------- Onglets client ----------
+function choisirOnglet(nom) {
+  const ops = nom === 'ops';
+  $('tab-ops').setAttribute('aria-selected', String(ops));
+  $('tab-contacts').setAttribute('aria-selected', String(!ops));
+  $('pan-ops').hidden = !ops;
+  $('pan-contacts').hidden = ops;
+}
+$('tab-ops').addEventListener('click', () => choisirOnglet('ops'));
+$('tab-contacts').addEventListener('click', () => choisirOnglet('contacts'));
+
+// ---------- Formulaire operation ----------
+function basculerChampsType() {
+  const envoi = /** @type {HTMLSelectElement} */ ($('op-type')).value === 'envoi';
+  $('champ-ar').hidden = !envoi;
+  $('champ-contact').hidden = !envoi;
+  if (!envoi) $('champ-nouveau-contact').hidden = true;
+  else basculerNouveauContact();
+}
+function basculerNouveauContact() {
+  const sel = /** @type {HTMLSelectElement} */ ($('op-contact'));
+  const envoi = /** @type {HTMLSelectElement} */ ($('op-type')).value === 'envoi';
+  if (sel.options.length === 1) sel.value = '__nouveau';
+  $('champ-nouveau-contact').hidden = !(envoi && sel.value === '__nouveau');
+}
+$('op-type').addEventListener('change', basculerChampsType);
+$('op-contact').addEventListener('change', basculerNouveauContact);
+
+$('form-op').addEventListener('submit', (e) => {
+  e.preventDefault();
+  if (!clientActif) return;
+  const type = /** @type {HTMLSelectElement} */ ($('op-type')).value;
+  const montantRs = parseFloat(/** @type {HTMLInputElement} */ ($('op-rs')).value);
+  if (!(montantRs > 0)) return;
+
+  let contactId = null;
+  if (type === 'envoi') {
+    const sel = /** @type {HTMLSelectElement} */ ($('op-contact'));
+    if (sel.value === '__nouveau') {
+      const nom = /** @type {HTMLInputElement} */ ($('nc-nom')).value.trim();
+      const numero = /** @type {HTMLInputElement} */ ($('nc-num')).value.trim();
+      if (!nom || !numero) { alert('Renseigne le nom et le numero du destinataire.'); return; }
+      const ct = {
+        id: uid(), clientId: clientActif, nom, numero,
+        ville: /** @type {HTMLInputElement} */ ($('nc-ville')).value.trim(), cree: Date.now()
+      };
+      etat.contacts.push(ct);
+      contactId = ct.id;
+    } else {
+      contactId = sel.value;
+    }
+  }
+
+  etat.operations.push({
+    id: uid(), clientId: clientActif, type,
+    date: /** @type {HTMLInputElement} */ ($('op-date')).value,
+    montantRs,
+    montantAr: type === 'envoi' ? (parseFloat(/** @type {HTMLInputElement} */ ($('op-ar')).value) || 0) : 0,
+    contactId,
+    note: /** @type {HTMLInputElement} */ ($('op-note')).value.trim(),
+    cree: Date.now()
+  });
+
+  const dateGardee = /** @type {HTMLInputElement} */ ($('op-date')).value;
+  /** @type {HTMLFormElement} */ ($('form-op')).reset();
+  /** @type {HTMLInputElement} */ ($('op-date')).value = dateGardee;
+  /** @type {HTMLSelectElement} */ ($('op-type')).value = type;
+
+  sauvegarder(); rendre(); basculerChampsType();
+  /** @type {HTMLInputElement} */ ($('op-rs')).focus();
+});
+
+$('corps-ops').addEventListener('click', (e) => {
+  const btn = /** @type {HTMLElement} */ (e.target).closest('[data-suppr-op]');
+  if (!btn) return;
+  if (!confirm('Supprimer cette operation ?')) return;
+  const id = btn.getAttribute('data-suppr-op');
+  etat.operations = etat.operations.filter((o) => o.id !== id);
+  sauvegarder(); rendre();
+});
+
+// ---------- Destinataires ----------
+$('form-contact').addEventListener('submit', (e) => {
+  e.preventDefault();
+  if (!clientActif) return;
+  const nom = /** @type {HTMLInputElement} */ ($('ct-nom')).value.trim();
+  const numero = /** @type {HTMLInputElement} */ ($('ct-num')).value.trim();
+  if (!nom || !numero) return;
+  etat.contacts.push({
+    id: uid(), clientId: clientActif, nom, numero,
+    ville: /** @type {HTMLInputElement} */ ($('ct-ville')).value.trim(), cree: Date.now()
+  });
+  /** @type {HTMLFormElement} */ ($('form-contact')).reset();
+  sauvegarder(); rendre();
+});
+
+$('liste-contacts').addEventListener('click', (e) => {
+  const btn = /** @type {HTMLElement} */ (e.target).closest('[data-suppr-contact]');
+  if (!btn) return;
+  const id = btn.getAttribute('data-suppr-contact');
+  if (etat.operations.some((o) => o.contactId === id)) {
+    alert('Ce destinataire apparait dans des operations. Il ne peut pas etre supprime.');
+    return;
+  }
+  if (!confirm('Supprimer ce destinataire ?')) return;
+  etat.contacts = etat.contacts.filter((c) => c.id !== id);
+  sauvegarder(); rendre();
+});
+
+// ---------- Finances ----------
+$('form-fin').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const montant = parseFloat(/** @type {HTMLInputElement} */ ($('fn-montant')).value);
+  const categorie = /** @type {HTMLInputElement} */ ($('fn-categorie')).value.trim();
+  if (!(montant > 0) || !categorie) return;
+
+  etat.finances.push({
+    id: uid(),
+    type: /** @type {HTMLSelectElement} */ ($('fn-type')).value,
+    date: /** @type {HTMLInputElement} */ ($('fn-date')).value,
+    montant,
+    categorie,
+    libelle: /** @type {HTMLInputElement} */ ($('fn-libelle')).value.trim(),
+    cree: Date.now()
+  });
+
+  const dateGardee = /** @type {HTMLInputElement} */ ($('fn-date')).value;
+  const typeGarde = /** @type {HTMLSelectElement} */ ($('fn-type')).value;
+  /** @type {HTMLFormElement} */ ($('form-fin')).reset();
+  /** @type {HTMLInputElement} */ ($('fn-date')).value = dateGardee;
+  /** @type {HTMLSelectElement} */ ($('fn-type')).value = typeGarde;
+
+  sauvegarder(); rendreFinances();
+  /** @type {HTMLInputElement} */ ($('fn-montant')).focus();
+});
+
+$('corps-fin').addEventListener('click', (e) => {
+  const btn = /** @type {HTMLElement} */ (e.target).closest('[data-suppr-fin]');
+  if (!btn) return;
+  if (!confirm('Supprimer cette ecriture ?')) return;
+  const id = btn.getAttribute('data-suppr-fin');
+  etat.finances = etat.finances.filter((f) => f.id !== id);
+  sauvegarder(); rendreFinances();
+});
+
+$('fin-periode').addEventListener('change', rendreFinances);
+$('st-periode').addEventListener('change', rendreStats);
+
+// ---------- Sauvegarde fichier ----------
+$('btn-export').addEventListener('click', () => {
+  const blob = new Blob([JSON.stringify(etat, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'caisse-' + new Date().toISOString().slice(0, 10) + '.json';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+});
+
+$('btn-import').addEventListener('click', () => $('fichier-import').click());
+$('fichier-import').addEventListener('change', (e) => {
+  const input = /** @type {HTMLInputElement} */ (e.target);
+  const fichier = input.files && input.files[0];
+  if (!fichier) return;
+  const lecteur = new FileReader();
+  lecteur.onload = () => {
+    try {
+      const d = JSON.parse(String(lecteur.result));
+      if (!Array.isArray(d.clients) || !Array.isArray(d.operations)) throw new Error('structure');
+      if (!confirm('Remplacer les donnees actuelles par ce fichier ?')) return;
+      etat = normaliser(d);
+      clientActif = etat.clients.length ? etat.clients[0].id : null;
+      synchroniserChamps(); sauvegarder(); rendre();
+    } catch (err) {
+      alert("Ce fichier n'est pas une sauvegarde valide.");
+    } finally {
+      input.value = '';
+    }
+  };
+  lecteur.readAsText(fichier);
+});
+
+$('btn-vider').addEventListener('click', () => {
+  if (!confirm('Effacer toutes les donnees de la base ? Cette action est definitive ' +
+    'et vaut pour tous les appareils.')) return;
+  etat = etatVide();
+  clientActif = null;
+  synchroniserChamps(); sauvegarder(); rendre();
+});
+
+// ---------- Jeu d'essai ----------
+$('btn-essai').addEventListener('click', () => {
+  if ((etat.clients.length || etat.finances.length) &&
+      !confirm("Remplacer les donnees actuelles par le jeu d'essai ?")) return;
+
+  const base = new Date();
+  const jour = (moisEnArriere, j) => {
+    const d = new Date(base.getFullYear(), base.getMonth() - moisEnArriere, j);
+    return d.toISOString().slice(0, 10);
+  };
+
+  const anne = { id: uid(), nom: 'Anne', telephone: '5xxx xxxx', cree: Date.now() };
+  const jean = { id: uid(), nom: 'Jean', telephone: '', cree: Date.now() + 1 };
+  const marie = { id: uid(), nom: 'Marie', telephone: '', cree: Date.now() + 2 };
+
+  const ctA = { id: uid(), clientId: anne.id, nom: 'Hanta', numero: '034 12 345 67', ville: 'Antananarivo', cree: Date.now() };
+  const ctJ1 = { id: uid(), clientId: jean.id, nom: 'Rakoto', numero: '033 22 111 90', ville: 'Toamasina', cree: Date.now() };
+  const ctJ2 = { id: uid(), clientId: jean.id, nom: 'Voahangy', numero: '032 44 778 12', ville: 'Fianarantsoa', cree: Date.now() };
+  const ctM = { id: uid(), clientId: marie.id, nom: 'Naina', numero: '034 88 200 45', ville: 'Mahajanga', cree: Date.now() };
+
+  const ops = [];
+  let k = 0;
+  const ajouterOp = (clientId, type, date, montantRs, montantAr, contactId, note) => {
+    ops.push({ id: uid(), clientId, type, date, montantRs, montantAr: montantAr || 0, contactId: contactId || null, note: note || '', cree: Date.now() + (k++) });
+  };
+
+  // Jean : envois frequents, gros volume
+  ajouterOp(jean.id, 'depot', jour(5, 3), 50000, 0, null, 'A garder, envois etales');
+  [5, 4, 4, 3, 2, 2, 1, 0].forEach((m, i) => {
+    ajouterOp(jean.id, 'envoi', jour(m, 6 + (i % 3) * 7), 5000 + (i % 3) * 1000,
+      (5000 + (i % 3) * 1000) * 95, i % 2 === 0 ? ctJ1.id : ctJ2.id);
+  });
+  ajouterOp(jean.id, 'depot', jour(1, 10), 20000, 0, null, '');
+
+  // Anne : peu d'envois, montants moyens
+  ajouterOp(anne.id, 'depot', jour(4, 12), 15000, 0, null, '');
+  ajouterOp(anne.id, 'envoi', jour(4, 14), 7000, 665000, ctA.id);
+  ajouterOp(anne.id, 'envoi', jour(1, 9), 6000, 573000, ctA.id);
+  ajouterOp(anne.id, 'depot', jour(0, 4), 10000, 0, null, 'Remis en main propre');
+
+  // Marie : un seul gros envoi
+  ajouterOp(marie.id, 'depot', jour(2, 20), 30000, 0, null, '');
+  ajouterOp(marie.id, 'envoi', jour(2, 22), 28000, 2660000, ctM.id);
+
+  // Finances personnelles
+  const fin = [];
+  let f = 0;
+  const ajouterFin = (type, date, montant, categorie, libelle) => {
+    fin.push({ id: uid(), type, date, montant, categorie, libelle: libelle || '', cree: Date.now() + (f++) });
+  };
+  for (let m = 5; m >= 0; m--) {
+    ajouterFin('revenu', jour(m, 28), 28000, 'Salaire', '');
+    if (m % 2 === 0) ajouterFin('revenu', jour(m, 15), 6000 + m * 500, 'Freelance', 'Mission web');
+    ajouterFin('depense', jour(m, 2), 9000, 'Loyer', '');
+    ajouterFin('depense', jour(m, 5), 3200 + m * 200, 'Courses', '');
+    ajouterFin('depense', jour(m, 11), 1500, 'Transport', '');
+    ajouterFin('depense', jour(m, 18), 900, 'Telecom', '');
+    if (m % 3 === 0) ajouterFin('depense', jour(m, 21), 4200, 'Materiel', 'Achat pieces');
+  }
+
+  etat = {
+    version: 2,
+    clients: [anne, jean, marie],
+    contacts: [ctA, ctJ1, ctJ2, ctM],
+    operations: ops,
+    finances: fin,
+    caisse: { banque: 5280, liquide: 500 },
+    ouverture: 3670
+  };
+  clientActif = anne.id;
+  synchroniserChamps(); sauvegarder(); rendre();
+});
+
+// ---------- Demarrage ----------
+(async function demarrer() {
+  const aujourdhui = new Date().toISOString().slice(0, 10);
+  /** @type {HTMLInputElement} */ ($('op-date')).value = aujourdhui;
+  /** @type {HTMLInputElement} */ ($('fn-date')).value = aujourdhui;
+  basculerChampsType();
+  synchroniserChamps();
+  rendre();
+
+  if (!sb) {
+    marquerEtat('erreur', 'Hors ligne');
+    signaler("La librairie Supabase n'a pas pu etre chargee. Verifie ta connexion " +
+      'puis recharge la page : sans elle, rien ne peut etre lu ni enregistre.');
+    return;
+  }
+
+  marquerEtat('cours', 'Chargement');
+  try {
+    await charger();
+  } catch (e) {
+    console.error('Lecture impossible', e);
+    marquerEtat('erreur', 'Hors ligne');
+    signaler('Impossible de joindre la base de donnees (' + messageErreur(e) +
+      '). Recharge la page une fois la connexion revenue : tant que ce message ' +
+      "s'affiche, aucune modification n'est enregistree.");
+    return;
+  }
+
+  pretAEcrire = true;
+  marquerEtat('pret', 'Enregistre');
+  synchroniserChamps();
+  if (etat.clients.length > 0) clientActif = etat.clients[0].id;
+  rendre();
+  await reprendreDonneesLocales();
+})();
+</script>
+</body>
+</html>
