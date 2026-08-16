@@ -269,7 +269,6 @@ tbody tr:hover { background: #EDEEE7; }
 .etiquette.depot, .etiquette.revenu { background: #DCE9E1; color: var(--credit); }
 .etiquette.envoi, .etiquette.depense { background: #F2DFDA; color: var(--debit); }
 .etiquette.remise { background: #E4E4DC; color: var(--gris); }
-.taux { font-family: var(--mono); font-size: 10.5px; color: var(--gris-clair); display: block; }
 .destinataire-num { font-family: var(--mono); font-size: 11.5px; color: var(--gris); display: block; }
 .note-ligne { font-size: 12.5px; color: var(--gris); display: block; margin-top: 2px; }
 .supprimer {
@@ -1189,8 +1188,6 @@ function rendreOperations(clientId) {
   const lignes = ops.map((o) => {
     cumul += signe(o) * o.montantRs;
     const ct = etat.contacts.find((c) => c.id === o.contactId);
-    const taux = o.type === 'envoi' && o.montantAr && o.montantRs
-      ? '<span class="taux">' + nfAr.format(o.montantAr / o.montantRs) + ' Ar / Rs</span>' : '';
     return '<tr>' +
       '<td class="num">' + esc(dateCourte(o.date)) + '</td>' +
       '<td><span class="etiquette ' + o.type + '">' + libelles[o.type] + '</span></td>' +
@@ -1201,7 +1198,7 @@ function rendreOperations(clientId) {
         (o.note ? '<span class="note-ligne">' + esc(o.note) + '</span>' : '') +
       '</td>' +
       '<td class="num">' + (signe(o) > 0 ? '+' : '-') + nfRs.format(o.montantRs) + '</td>' +
-      '<td class="num">' + (o.montantAr ? nfAr.format(o.montantAr) + taux : '-') + '</td>' +
+      '<td class="num">' + (o.montantAr ? nfAr.format(o.montantAr) : '-') + '</td>' +
       '<td class="num">' + nfRs.format(cumul) + '</td>' +
       '<td><button class="supprimer" data-suppr-op="' + o.id +
         '" aria-label="Supprimer cette operation">&times;</button></td>' +
